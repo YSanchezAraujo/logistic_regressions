@@ -1,5 +1,7 @@
 import jax.numpy as jnp
 from jax import grad
+import numpy as np
+import scipy.optimize as optimize
 
 def sigmoid(x):
     return 0.5 * (jnp.tanh(x / 2) + 1)
@@ -11,7 +13,36 @@ def loss(w, b, X, gamma, lambd, y):
     preds = predict(w, b, X, gamma, lambd)
     return -jnp.sum(jnp.log(preds * y + (1 - preds) * (1 - y)))
 
-def fitGLM(X, y, w, b, learning_rate, gamma, lambd, n_stop=int(2e3)):
+def sigmoid_SO(x):
+        return 0.5 * (np.tanh(x / 2) + 1)
+
+def predict_SO(w, b, X, gamma_R, gamma_L):
+    return gamma_L + (1 - gamma_L - gamma_R) * sigmoid_SO(np.dot(X, w) + b)
+
+def negloglik(params, X, y):
+    w, b, gamma_R, gamma_L = params
+    preds = predict_SO(w, b, X, gamma_R, gamma_L)
+    llv = preds * y + (1 - preds) * (1 - y)
+    return -np.sum(np.log(llv))
+
+
+def fitSOGLM(X, y, w, b, gamma_R, gamma_L, method="SLSQP"):
+    res = optimize.minimize(negloglik, 
+	                     x0=[w, b, gamma_R, gamma_L], 
+			     args=(X, y),
+			     method=method)
+    ests = {"w":res["x"][0], "b":res["x"][1], "gR":res["x"][2], "gL":res["x"][3]}
+    return ests, res
+
+    
+def postPredict(est_obj, X, y):
+    w_est, b_est, gamma_est, lambd_est = est_obj["x"]
+    preds = predict_SO(w_est, b_est, X, gamma_est, lambd_est)
+    acc = (y != preds.round()).mean()
+    return preds, acc
+
+
+def fitGDGLM(X, y, w, b, learning_rate, gamma, lambd, n_stop=int(5e3)):
     """X: jnp.array input data of shape (N, P)
     y: jnp.array binary choice data of shape (N, 1)
     w: jnp.array initialization for weights of shape (P, 1)
